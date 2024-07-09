@@ -40,6 +40,7 @@ get_events_by_round <- function(league_id, round, season) {
   query_api(url)$events
 }
 
+
 server <- function(input, output, session) {
   observe({
     updateSelectInput(session, "league", choices = list_leagues_in_country("England")$strLeague)
