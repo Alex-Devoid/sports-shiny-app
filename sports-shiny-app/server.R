@@ -10,6 +10,11 @@ query_api <- function(url) {
   fromJSON(content(response, as = "text"), flatten = TRUE)
 }
 
+list_all_countries <- function() {
+  url <- "https://www.thesportsdb.com/api/v1/json/3/all_countries.php"
+  query_api(url)$countries
+}
+
 list_all_sports <- function() {
   url <- "https://www.thesportsdb.com/api/v1/json/3/all_sports.php"
   query_api(url)$sports
@@ -17,12 +22,16 @@ list_all_sports <- function() {
 
 list_leagues_in_country <- function(country) {
   url <- paste0("https://www.thesportsdb.com/api/v1/json/3/search_all_leagues.php?c=", country)
-  query_api(url)$countries
+  query_api(url)$countrys
 }
 
-search_team_by_name <- function(team_name) {
+search_team_by_name <- function(team_name, sport) {
   url <- paste0("https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=", team_name)
-  query_api(url)$teams
+  teams <- query_api(url)$teams
+  if (!is.null(teams)) {
+    teams <- teams[teams$strSport == sport, ]
+  }
+  teams
 }
 
 list_players_in_team <- function(team_id) {
@@ -35,28 +44,21 @@ list_teams_in_league <- function(league_name) {
   query_api(url)$teams
 }
 
-get_event_details <- function(event_id) {
-  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/lookupevent.php?id=", event_id)
-  query_api(url)$events
-}
-
-get_events_by_round <- function(league_id, round, season) {
-  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=", league_id, "&r=", round, "&s=", season)
-  query_api(url)$events
-}
-
-truncate_text <- function(text, max_length = 100) {
-  if (nchar(text) > max_length) {
-    paste0(substr(text, 1, max_length), "...")
-  } else {
-    text
-  }
-}
-
 server <- function(input, output, session) {
+  # Load initial data for countries and sports
   observe({
-    updateSelectInput(session, "league", choices = list_leagues_in_country("England")$strLeague)
-    updateSelectInput(session, "explore_league", choices = list_leagues_in_country("England")$strLeague)
+    countries <- list_all_countries()
+    updateSelectInput(session, "country", choices = setNames(countries$name_en, countries$name_en))
+    
+    sports <- list_all_sports()
+    updateSelectInput(session, "sport", choices = setNames(sports$strSport, sports$strSport))
+  })
+  
+  # Update leagues based on selected country and sport
+  observeEvent(input$country, {
+    req(input$country)
+    leagues <- list_leagues_in_country(input$country)
+    updateSelectInput(session, "league", choices = leagues$strLeague)
   })
   
   team_data <- reactiveVal(NULL)
@@ -67,34 +69,37 @@ server <- function(input, output, session) {
     teams <- list_teams_in_league(input$league)
     if (!is.null(teams)) {
       updateSelectInput(session, "team_id", choices = setNames(teams$idTeam, teams$strTeam))
-      updateSelectInput(session, "explore_team_id", choices = setNames(teams$idTeam, teams$strTeam))
     } else {
       updateSelectInput(session, "team_id", choices = NULL)
-      updateSelectInput(session, "explore_team_id", choices = NULL)
     }
   })
   
   observeEvent(input$search_team, {
-    teams <- search_team_by_name(input$team)
+    teams <- search_team_by_name(input$team, input$sport)
     team_data(teams)
     updateSelectInput(session, "team_id", choices = setNames(teams$idTeam, teams$strTeam))
-    updateSelectInput(session, "explore_team_id", choices = setNames(teams$idTeam, teams$strTeam))
   })
   
   observeEvent(input$get_players, {
     players <- list_players_in_team(input$team_id)
     players_data(players)
-    updateSelectInput(session, "variable_x", choices = names(players))
-    updateSelectInput(session, "variable_y", choices = names(players))
-    updateSelectInput(session, "categorical_variable", choices = names(players))
+    
+    numeric_vars <- c("strWage", "strHeight", "strWeight")
+    categorical_vars <- c("strNationality", "strPosition", "strTeam", "strSport", "strEthnicity", "strGender", "strSide", "strStatus")
+    
+    updateSelectInput(session, "variable_x", choices = numeric_vars)
+    updateSelectInput(session, "variable_y", choices = numeric_vars)
+    updateSelectInput(session, "categorical_variable", choices = categorical_vars)
+    updateSelectInput(session, "facet_variable", choices = c("", categorical_vars))
   })
   
   output$team_data <- renderTable({
-    data <- head(team_data(), 10)
-    if (!is.null(data) && input$truncate_descriptions) {
-      data$strDescriptionEN <- sapply(data$strDescriptionEN, truncate_text)
+    data <- team_data()
+    if (is.null(data)) return(NULL)
+    if (input$truncate_descriptions) {
+      data$strDescriptionEN <- substr(data$strDescriptionEN, 1, 100)
     }
-    data
+    head(data, 10)
   })
   
   output$players_data <- renderTable({
@@ -112,9 +117,23 @@ server <- function(input, output, session) {
   
   plot_data <- eventReactive(input$plot_data, {
     req(input$variable_x, input$variable_y)
-    ggplot(players_data(), aes(x = .data[[input$variable_x]], y = .data[[input$variable_y]])) +
-      geom_point() +
-      labs(title = paste(input$variable_y, "vs", input$variable_x))
+    plot_type <- input$plot_type
+    facet_var <- input$facet_variable
+    p <- ggplot(players_data(), aes_string(x = input$variable_x, y = input$variable_y))
+    
+    if (plot_type == "Scatter Plot") {
+      p <- p + geom_point()
+    } else if (plot_type == "Histogram") {
+      p <- p + geom_histogram(binwidth = 1)
+    } else if (plot_type == "Bar Plot") {
+      p <- p + geom_bar(stat = "identity", position = "dodge")
+    }
+    
+    if (facet_var != "") {
+      p <- p + facet_wrap(as.formula(paste("~", facet_var)))
+    }
+    
+    p + labs(title = paste(input$variable_y, "vs", input$variable_x))
   })
   
   output$plot <- renderPlot({
@@ -139,19 +158,19 @@ server <- function(input, output, session) {
   })
   
   output$plot1 <- renderPlot({
-    ggplot(players_data(), aes(x = .data[[input$variable_x]], y = .data[[input$variable_y]])) +
+    ggplot(players_data(), aes_string(x = input$variable_x, y = input$variable_y)) +
       geom_point() +
       labs(title = "Scatter Plot", x = input$variable_x, y = input$variable_y)
   })
   
   output$plot2 <- renderPlot({
-    ggplot(players_data(), aes(x = .data[[input$variable_x]])) +
+    ggplot(players_data(), aes_string(x = input$variable_x)) +
       geom_histogram(binwidth = 1) +
       labs(title = "Histogram", x = input$variable_x)
   })
   
   output$plot3 <- renderPlot({
-    ggplot(players_data(), aes(x = .data[[input$variable_x]], fill = .data[[input$categorical_variable]])) +
+    ggplot(players_data(), aes_string(x = input$variable_x, fill = input$categorical_variable)) +
       geom_bar(position = "dodge") +
       labs(title = "Bar Plot", x = input$variable_x)
   })

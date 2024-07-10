@@ -24,13 +24,15 @@ ui <- tagList(
                             )
                           )
                         )
-                      )),
+                      )
+             ),
              tabPanel("Data Download",
                       fluidPage(
                         titlePanel("Data Download"),
                         sidebarLayout(
                           sidebarPanel(
-                            selectInput("sport", "Select Sport", choices = c("Soccer")),
+                            selectInput("country", "Select Country", choices = NULL),
+                            selectInput("sport", "Select Sport", choices = NULL),
                             selectInput("league", "Select League", choices = NULL),
                             textInput("team", "Search Team by Name"),
                             actionButton("search_team", "Search"),
@@ -39,27 +41,25 @@ ui <- tagList(
                             checkboxInput("truncate_descriptions", "Truncate Descriptions", value = TRUE)
                           ),
                           mainPanel(
+                            downloadButton("download_data", "Download Data"),
                             tableOutput("team_data"),
-                            tableOutput("players_data"),
-                            downloadButton("download_data", "Download Data")
+                            tableOutput("players_data")
                           )
                         )
-                      )),
+                      )
+             ),
              tabPanel("Data Exploration",
                       fluidPage(
                         titlePanel("Data Exploration"),
                         sidebarLayout(
                           sidebarPanel(
-                            selectInput("explore_sport", "Select Sport", choices = c("Soccer")),
-                            selectInput("explore_league", "Select League", choices = NULL),
-                            textInput("explore_team", "Search Team by Name"),
-                            actionButton("explore_search_team", "Search"),
-                            selectInput("explore_team_id", "Select Team", choices = NULL),
-                            actionButton("explore_get_players", "Get Players"),
-                            selectInput("variable_x", "X-axis Variable", choices = NULL),
-                            selectInput("variable_y", "Y-axis Variable", choices = NULL),
-                            selectInput("categorical_variable", "Categorical Variable", choices = NULL),
-                            actionButton("plot_data", "Plot Data")
+                            selectInput("variable_x", "X-axis Variable", choices = NULL, label = "Select the variable for the X-axis:"),
+                            selectInput("variable_y", "Y-axis Variable", choices = NULL, label = "Select the variable for the Y-axis:"),
+                            selectInput("categorical_variable", "Categorical Variable", choices = NULL, label = "Select a categorical variable for grouping or coloring:"),
+                            selectInput("plot_type", "Plot Type", choices = c("Scatter Plot", "Histogram", "Bar Plot"), label = "Select the type of plot:"),
+                            selectInput("facet_variable", "Facet by Variable", choices = NULL, label = "Select a variable to facet the plot by (optional):"),
+                            actionButton("plot_data", "Plot Data"),
+                            p('Please run "Get Players" first before plotting.')
                           ),
                           mainPanel(
                             plotOutput("plot"),
@@ -68,10 +68,10 @@ ui <- tagList(
                             tableOutput("numerical_summary"),
                             plotOutput("plot1"),
                             plotOutput("plot2"),
-                            plotOutput("plot3"),
-                            plotOutput("plot4")
+                            plotOutput("plot3")
                           )
                         )
-                      ))
+                      )
+             )
   )
 )
