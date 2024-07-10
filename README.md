@@ -17,4 +17,7 @@ You can install all the required packages using the following line of code:
 install.packages(c("shiny", "httr", "jsonlite", "dplyr", "ggplot2"))
 ```
 
-To run from github enter `shiny::runGitHub("sports-shiny-app", "Alex-Devoid")`.
+To run from github enter: 
+```
+shiny::runGitHub("sports-shiny-app", "Alex-Devoid")
+```
