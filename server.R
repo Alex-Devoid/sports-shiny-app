@@ -10,23 +10,24 @@ query_api <- function(url) {
   fromJSON(content(response, as = "text"), flatten = TRUE)
 }
 
-list_all_countries <- function() {
-  url <- "https://www.thesportsdb.com/api/v1/json/3/all_countries.php"
-  query_api(url)$countries
-}
-
 list_all_sports <- function() {
   url <- "https://www.thesportsdb.com/api/v1/json/3/all_sports.php"
   query_api(url)$sports
 }
 
-list_leagues_in_country <- function(country) {
-  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/search_all_leagues.php?c=", country)
-  query_api(url)$countrys
+list_all_countries <- function() {
+  url <- "https://www.thesportsdb.com/api/v1/json/3/all_countries.php"
+  query_api(url)$countries
+}
+
+list_leagues_in_country_sport <- function(country, sport) {
+  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/search_all_leagues.php?c=", URLencode(country), "&s=", URLencode(sport))
+  print(url)
+  query_api(url)$countries
 }
 
 search_team_by_name <- function(team_name, sport) {
-  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=", team_name)
+  url <- paste0("https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=", URLencode(team_name))
   teams <- query_api(url)$teams
   if (!is.null(teams)) {
     teams <- teams[teams$strSport == sport, ]
@@ -44,40 +45,47 @@ list_teams_in_league <- function(league_name) {
   query_api(url)$teams
 }
 
+# List of European countries
+european_countries <- c("England","Spain")
+
 server <- function(input, output, session) {
-  # Load initial data for countries and sports
-  observe({
-    countries <- list_all_countries()
-    updateSelectInput(session, "country", choices = setNames(countries$name_en, countries$name_en))
-    
-    sports <- list_all_sports()
-    updateSelectInput(session, "sport", choices = setNames(sports$strSport, sports$strSport))
-  })
+  # Load initial data for sports and countries
+  sports <- list_all_sports()
+  countries <- list_all_countries()
   
-  # Update leagues based on selected country and sport
-  observeEvent(input$country, {
-    req(input$country)
-    leagues <- list_leagues_in_country(input$country)
-    updateSelectInput(session, "league", choices = leagues$strLeague)
-  })
+  # Filter countries to only include European countries
+  european_countries_list <- countries %>%
+    filter(name_en %in% european_countries)
+  
+  updateSelectInput(session, "sport", choices = sports$strSport)
+  updateSelectInput(session, "country", choices = european_countries_list$name_en)
   
   team_data <- reactiveVal(NULL)
   players_data <- reactiveVal(NULL)
   
-  observeEvent(input$league, {
-    req(input$league)
-    teams <- list_teams_in_league(input$league)
-    if (!is.null(teams)) {
-      updateSelectInput(session, "team_id", choices = setNames(teams$idTeam, teams$strTeam))
-    } else {
-      updateSelectInput(session, "team_id", choices = NULL)
-    }
+  observeEvent(input$country, {
+    req(input$country, input$sport)
+    print(input$country)
+    print(input$sport)
+    leagues <- list_leagues_in_country_sport(input$country, input$sport)
+    updateSelectInput(session, "league", choices = leagues$strLeague)
+    updateSelectInput(session, "explore_league", choices = leagues$strLeague)
   })
   
   observeEvent(input$search_team, {
     teams <- search_team_by_name(input$team, input$sport)
     team_data(teams)
-    updateSelectInput(session, "team_id", choices = setNames(teams$idTeam, teams$strTeam))
+    updateSelectInput(session, "explore_team_id", choices = setNames(teams$idTeam, teams$strTeam))
+  })
+  
+  observeEvent(input$league, {
+    req(input$league)
+    teams1 <- list_teams_in_league(input$league)
+    if (!is.null(teams1)) {
+      updateSelectInput(session, "team_id", choices = setNames(teams1$idTeam, teams1$strTeam))
+    } else {
+      updateSelectInput(session, "team_id", choices = NULL)
+    }
   })
   
   observeEvent(input$get_players, {
@@ -155,23 +163,5 @@ server <- function(input, output, session) {
     players_data() %>%
       group_by_at(input$categorical_variable) %>%
       summarise(across(all_of(input$variable_x), list(mean = mean, sd = sd, min = min, max = max), .names = "summary_{col}_{fn}"))
-  })
-  
-  output$plot1 <- renderPlot({
-    ggplot(players_data(), aes_string(x = input$variable_x, y = input$variable_y)) +
-      geom_point() +
-      labs(title = "Scatter Plot", x = input$variable_x, y = input$variable_y)
-  })
-  
-  output$plot2 <- renderPlot({
-    ggplot(players_data(), aes_string(x = input$variable_x)) +
-      geom_histogram(binwidth = 1) +
-      labs(title = "Histogram", x = input$variable_x)
-  })
-  
-  output$plot3 <- renderPlot({
-    ggplot(players_data(), aes_string(x = input$variable_x, fill = input$categorical_variable)) +
-      geom_bar(position = "dodge") +
-      labs(title = "Bar Plot", x = input$variable_x)
   })
 }
